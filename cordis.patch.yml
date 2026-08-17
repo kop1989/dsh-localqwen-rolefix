@@ -1,0 +1,14 @@
+# dsh-localqwen-rolefix bundle patch: inserts the plugin row when this package
+# is installed via `dsh plugin --profile web add dsh-localqwen-rolefix`.
+# Override config in your own profile cordis.patch.yml by row id, e.g.:
+#   - id: dsh-localqwen-rolefix
+#     config:
+#       providers: [sglang-local]
+#       logPath: ""
+- insert:
+    - id: dsh-localqwen-rolefix
+      name: dsh-localqwen-rolefix
+      inject: [llm]
+      config:
+        providers: []
+        logPath: ""
