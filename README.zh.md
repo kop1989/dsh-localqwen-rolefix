@@ -83,7 +83,7 @@ llm-pi-ai:
       apiKeyEnv: SGLANG_LOCAL_API_KEY
       reasoning: xhigh        # 默认档位（模型官方默认），不设会导致"Default"被当成关思考
       models:
-        - id: /home/wangyimin/models/Qwen/Qwen3.8-27B-FP8
+        - id: /path/to/models/Qwen/Qwen3.8-27B-FP8
           name: Qwen3.8-27B-FP8 (local sglang)
           contextWindow: 262144
           maxTokens: 16384

@@ -84,7 +84,7 @@ llm-pi-ai:
       reasoning: xhigh        # default level (matches the model's own default);
                               # without it, "Default" is treated as thinking off
       models:
-        - id: /home/wangyimin/models/Qwen/Qwen3.8-27B-FP8
+        - id: /path/to/models/Qwen/Qwen3.8-27B-FP8
           name: Qwen3.8-27B-FP8 (local sglang)
           contextWindow: 262144
           maxTokens: 16384
