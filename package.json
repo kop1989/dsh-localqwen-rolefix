@@ -1,6 +1,6 @@
 {
   "name": "dsh-localqwen-rolefix",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "DSH (DeepSeek Harness) profile plugin: keep pi-ai from sending role \"developer\" to local SGLang/vLLM Qwen servers (400 Unexpected message role).",
   "type": "module",
   "main": "index.js",

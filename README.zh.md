@@ -20,11 +20,12 @@ DSH（DeepSeek Harness）插件：修复本地 SGLang/vLLM Qwen 模型配置思�
 
 ## 原理
 
-请求对象（`GenerateOptions`）在派发前会被 DSH **深度冻结**，瀑布层无法改写请求。插件改为每次派发前翻转 **pi-ai 模型描述符**的 `compat.supportsDeveloperRole = false`：
+插件每次派发前翻转 **pi-ai 模型描述符**的 `compat.supportsDeveloperRole = false`——描述符翻转是它唯一的改动：
 
 - 角色回到 `system`，SGLang 正常接受；
 - `model.reasoning` 保持 `true`，思考等级菜单与 `reasoning_effort` 参数不受影响；
 - 每个请求重新应用，settings 热加载后自愈；
+- **从不改写** `llm/stream` 的 options 对象：agent loop 请求本就被深度冻结；自动压缩摘要、会话标题等辅助调用传入的是可变 options，且要求 `system` 提示词与消息保持会话前缀的逐字回放（provider 前缀/KV 缓存复用的前提）。改写它们会让 pi-ai 适配器崩溃并静默禁用自动压缩；
 - **不改任何 DSH 安装源码**，升级后依然有效。
 
 ---
@@ -107,15 +108,16 @@ llm-pi-ai:
 配置了 `logPath` 时，每次请求追加一行探测日志，正常形如：
 
 ```
-2026-08-17T08:22:13.212Z stream: {"provider":"sglang-local","model":"/home/...","hasLlm":true,"hasRegistration":true,"hasAdapter":true,"isPiAi":true,"hasModel":true,"compatBefore":{"supportsReasoningEffort":true},"flipped":true,"systemFrozen":true}
+2026-08-17T08:22:13.212Z stream: {"provider":"sglang-local","model":"/home/...","hasLlm":true,"hasRegistration":true,"hasAdapter":true,"isPiAi":true,"hasModel":true,"compatBefore":{"supportsReasoningEffort":true},"flipped":true}
 ```
 
-`flipped: true` 即插件已生效。
+`flipped: true` 即插件已生效。辅助调用会带 `purpose` 字段（`"compaction"`、`"session-title"`），确认这些行同样 `flipped: true` 且无 `error` 键。
 
 ---
 
 ## 注意事项
 
+- 修复必须保持"只翻转描述符"：不要加入请求体改写（例如把 `options.system` 挪进首条 user 消息）。压缩摘要调用传入可变 options 且要求系统提示词原样保留——裸字符串消息会让 pi-ai 适配器崩溃，改写还会破坏摘要器依赖的前缀回放/KV 缓存复用（自动压缩会静默失效）。
 - 依赖 pi-ai 内部结构（`ctx.llm.adapters` 注册表、`adapter.current().models.getModel()`）；DSH 升级后若结构变化，插件会 **fail-open**（记录日志、请求原样发出），升级后请留意日志。
 - 这是 DSH 上游缺陷（推理模型默认发 `developer` 角色），建议向 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 反馈。
 - SGLang 启动建议带 `--reasoning-parser qwen3 --tool-call-parser qwen3_coder`（Qwen3.8 官方 cookbook），否则工具调用解析会失败。

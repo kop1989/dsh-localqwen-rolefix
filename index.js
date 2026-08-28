@@ -13,14 +13,22 @@
  *
  * Fix
  * ---
- * The GenerateOptions object is deep-frozen before dispatch, so the
- * llm/stream waterfall cannot rewrite the request. Instead, this plugin
- * flips the live pi-ai model descriptor's compat.supportsDeveloperRole to
- * false on every dispatch (pi-ai reads the descriptor at stream time; it is
- * not frozen). Requests then carry role "system" while model.reasoning
- * stays true, so the reasoning-effort menu and the wire parameter
- * `reasoning_effort` keep working. Re-applies per request (self-healing
- * across settings reloads).
+ * This plugin flips the live pi-ai model descriptor's
+ * compat.supportsDeveloperRole to false on every dispatch (pi-ai reads the
+ * descriptor at stream time; it is not frozen). Requests then carry role
+ * "system" while model.reasoning stays true, so the reasoning-effort menu
+ * and the wire parameter `reasoning_effort` keep working. Re-applies per
+ * request (self-healing across settings reloads).
+ *
+ * The descriptor flip is the only mutation performed; the llm/stream
+ * options object is treated as read-only. Agent-loop requests are
+ * deep-frozen before dispatch anyway, but auxiliary callers (notably
+ * dsh-compaction-basic's cache-reusing summarization call) pass plain
+ * mutable options whose system prompt and message prefix must stay
+ * byte-identical to the last routed request for prefix/KV-cache reuse.
+ * Rewriting options.system into a leading user message there would crash
+ * the pi-ai adapter (a bare string is not a valid DSH message) and
+ * silently disable automatic compaction — so this is never done.
  *
  * No DSH installation sources are modified; this survives upgrades.
  *
@@ -74,7 +82,9 @@ export function apply(ctx, config = {}) {
     "llm/stream",
     (options, next) => {
       if (providers && !providers.has(options.provider)) return next();
-      const probe = { provider: options.provider, model: options.model };
+      // `purpose` is undefined for agent-loop requests and identifies
+      // auxiliary calls ("compaction", "session-title") in the log.
+      const probe = { provider: options.provider, model: options.model, purpose: options.purpose };
       try {
         // cordis gates ctx.<service> access behind declared injection; the
         // registry locator ctx.get() works from any context.
@@ -106,25 +116,11 @@ export function apply(ctx, config = {}) {
             probe.flipped = true;
           }
         }
-        // Belt-and-suspenders: only when the request object is actually
-        // mutable (auxiliary requests such as title generation), also
-        // rewrite the system slot into a leading user message.
-        if (typeof options.system === "string" && options.system.length > 0) {
-          const messagesExtensible = Array.isArray(options.messages) && Object.isExtensible(options.messages);
-          const optionsWritable = Object.isExtensible(options) ||
-            (Object.getOwnPropertyDescriptor(options, "messages")?.writable !== false);
-          if (messagesExtensible && optionsWritable) {
-            options.messages.unshift({ role: "user", content: options.system });
-            try {
-              delete options.system;
-            } catch {
-              options.system = undefined;
-            }
-            probe.rewroteToUser = true;
-          } else {
-            probe.systemFrozen = true;
-          }
-        }
+        // options is intentionally left untouched: agent-loop requests are
+        // deep-frozen (a rewrite would be a no-op or a throw), and auxiliary
+        // callers (compaction summarization, session title) need
+        // options.system / messages byte-identical to the replayed session
+        // prefix — see header.
       } catch (error) {
         probe.error = String(error?.stack ?? error);
       }

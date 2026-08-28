@@ -20,11 +20,12 @@ Once you declare reasoning capability for a local Qwen model in `settings.yaml` 
 
 ## How it works
 
-The request object (`GenerateOptions`) is **deep-frozen** before dispatch, so the `llm/stream` waterfall cannot rewrite the request. This plugin instead flips the **pi-ai model descriptor's** `compat.supportsDeveloperRole = false` on every dispatch:
+This plugin flips the **pi-ai model descriptor's** `compat.supportsDeveloperRole = false` on every dispatch — the descriptor flip is the only mutation it performs:
 
 - pi-ai reads the descriptor at stream time (it is not frozen) → the role falls back to `"system"`;
 - `model.reasoning` stays `true` → the effort menu and `reasoning_effort` keep working;
 - re-applies on every request (self-healing after settings hot-reloads);
+- the `llm/stream` options object is **never rewritten**: agent-loop requests are deep-frozen anyway, and auxiliary callers (auto-compaction summarization, session title) pass mutable options whose `system` prompt and messages must stay a byte-identical replay of the session prefix for the provider's prefix/KV-cache reuse. Rewriting them crashes the pi-ai adapter and silently disables automatic compaction;
 - **no DSH sources are modified** — survives upgrades.
 
 ---
@@ -108,15 +109,16 @@ After restart, the model picker shows an effort menu: **Off / Low / Medium / Xhi
 With `logPath` configured, every request appends a probe line; a healthy one looks like:
 
 ```
-2026-08-17T08:22:13.212Z stream: {"provider":"sglang-local","model":"/home/...","hasLlm":true,"hasRegistration":true,"hasAdapter":true,"isPiAi":true,"hasModel":true,"compatBefore":{"supportsReasoningEffort":true},"flipped":true,"systemFrozen":true}
+2026-08-17T08:22:13.212Z stream: {"provider":"sglang-local","model":"/home/...","hasLlm":true,"hasRegistration":true,"hasAdapter":true,"isPiAi":true,"hasModel":true,"compatBefore":{"supportsReasoningEffort":true},"flipped":true}
 ```
 
-`flipped: true` means the plugin is active.
+`flipped: true` means the plugin is active. Auxiliary calls carry a `purpose` field (`"compaction"`, `"session-title"`); make sure those lines also show `flipped: true` and no `error` key.
 
 ---
 
 ## Notes
 
+- The fix must stay descriptor-only: do **not** add request-body rewriting (e.g. moving `options.system` into a leading user message). The compaction summarizer passes mutable options and requires the system prompt untouched — a bare string message crashes the pi-ai adapter, and the rewrite would break the prefix replay its KV-cache reuse depends on (automatic compaction would fail silently).
 - Relies on pi-ai internals (`ctx.llm.adapters` registry, `adapter.current().models.getModel()`). If a DSH update changes those shapes, the plugin **fails open** (logs the probe, request goes out unchanged) — watch the log after upgrading.
 - This is an upstream DSH gap: `compat.supportsDeveloperRole` should be configurable. Consider reporting it to [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness).
 - SGLang should be launched with `--reasoning-parser qwen3 --tool-call-parser qwen3_coder` (official Qwen3.8 cookbook), otherwise tool-call parsing fails.
